@@ -1,7 +1,7 @@
 # 从 0 跟做：scm-mcp-server 构建手册
 
 > 给想从头复现这个项目的人的「逐步轨迹」手册。
-> 配合 git branch `scm` 使用。
+> 配合 git branch `scm-from-zero` 使用。
 
 ---
 
@@ -13,9 +13,10 @@
 
 ### 最终成果
 
-- **37 个 tool**，覆盖 Objects / Security / Operations / IAM 四个 API 域。
-- 语法检查：7 个源文件全部 `ast.parse` 通过。
-- 路由完整性：37 个 tool 全部有对应路由条目。
+- **Batch 1**（MVP，~58 个 tool）：覆盖 Objects（核心对象 CRUD + 扩展对象只读）/ Security（规则完整 CRUD + 所有安全配置文件）/ Operations / IAM 四个 API 域。
+- **Batch 2**（扩展，~134 个 tool）：Objects 扩展写操作、Security 档案类写操作等。
+- 语法检查：所有源文件 `ast.parse` 通过。
+- 路由完整性：所有注册 tool 都有对应路由条目，无孤立项。
 
 ### 技术栈（钉死，引 `CLAUDE.md` §2）
 
@@ -73,10 +74,11 @@ Tag 命名约定：
 | Step 0 | `step-0` | Context Stack 契约 |
 | Step 1 | `step-1` | PRD |
 | Step 2 | `step-2` | 项目骨架 |
-| Step 3 | `step-3` | DESIGN 映射表填充 |
-| Step 4a | `step-4a` | Objects 只读 tools |
-| Step 4b | `step-4b` | Objects 写操作 tools |
-| Step 5 | `step-5` | Security / Operations / IAM tools |
+| Step 3 | `step-3` | DESIGN 映射表填充（Batch 1 + Batch 2 全部列出）|
+| Step 4a | `step-4a` | 全域只读 tool（list_* / get_*）|
+| Step 4b | `step-4b` | 全域标准写操作 tool（create_* / update_* / delete_*）|
+| Step 5 | `step-5` | 特殊操作 tool（move_* / push_* / 有独特 body 的写操作）+ Batch 1 收口 |
+| Step 5b | `step-5b` | Batch 2 扩展 tool（Objects 扩展 + Security 档案类写操作）|
 | Step 6 | `step-6` | 阶段 3 收口 + 冒烟 |
 
 检出任意历史节点：`git checkout step-N`
@@ -199,116 +201,154 @@ git tag step-2 && git push origin scm && git push origin step-2
 
 提取与排除原则：
 - 每个 (path, method) → 一个 tool，命名为 {动作}_{资源}（小写下划线）
-- 只读 tool 优先；写操作（POST/PUT/DELETE）纳入但在 description 标注「⚠️ 写操作」
+- 只读 tool（GET）和写操作（POST/PUT/PATCH/DELETE）全部纳入；写操作 description 标注「⚠️ 写操作」
+- move 类端点（POST .../move）单独一行，命名 move_{资源}
 - Auth token 端点（/auth/v1/oauth2/*）不暴露，由 auth.py 内部处理
-- SASE deployment / mobile agent / network services 等高复杂度写操作暂列为"后续批次"
+- SASE deployment / mobile agent / network infrastructure 等高复杂度写操作暂列为"后续批次"
 - 每行记录：tool 名、HTTP 方法+路径、类型（只读/写）、OpenAPI YAML 引用位置
-- 映射表填完后，统计 tool 总数，向我确认范围再进入阶段 2
+- 映射表按 Batch 分两组：
+  - **Batch 1（MVP）**：addresses、address_groups、services、service_groups、tags、app_groups、external_dynamic_lists（Objects 核心）+ security_rules 完整 CRUD + decryption_rules、app_override_rules、dos_protection_rules 完整 CRUD + 所有安全配置文件只读 + operations 全部（含 get_config_version、get_running_config_version）+ IAM 全部（含 get_service_account、get_role、get_access_policy）
+  - **Batch 2（扩展）**：剩余 objects（applications、application_filters、schedules、regions、hip_objects、hip_profiles、log_forwarding_profiles 等）+ Security 档案类写操作
+- 映射表填完后，统计两个 Batch 的 tool 总数，向我确认范围再进入阶段 2
 
-先输出你提取到的端点清单和 tool 命名列表，等我确认后再正式写入 DESIGN.md。
+先输出你提取到的端点清单和 tool 命名列表（按 Batch 分组），等我确认后再正式写入 DESIGN.md。
 ```
 
-**教学点**：阶段 1 不只是"填表"，还包含**范围判断**——不是每个端点都该变成 tool。Auth 端点内部化（不暴露）是核心设计决策。SASE 网络配置类端点参数复杂、不确定性高，先排除、后续再评估，而不是强行全覆盖。
+**教学点**：阶段 1 不只是"填表"，还包含**范围判断**——不是每个端点都该变成 tool。Auth 端点内部化不暴露是核心设计决策。用 Batch 分组而不是靠记忆决定哪些"应该有"，是防止遗漏的关键：**YAML 里有什么就列什么，再按复杂度分 Batch，而不是先拍脑袋定范围再去 YAML 里找**。
 
-**验收**：DESIGN.md §3 无 `_TBD_`，每行可在对应 YAML 中定位；tool 命名符合 `{动作}_{资源}` 规范。
+**验收**：DESIGN.md §3 无 `_TBD_`，Batch 1 / Batch 2 均已列出，每行可在对应 YAML 中定位；tool 命名符合 `{动作}_{资源}` 规范；move 类端点单独成行。
 
 **提交**：
 ```bash
-git add -A && git commit -m "step-3: 填充 DESIGN.md 映射表（37 个 tool，4 个 API 域）"
-git tag step-3 && git push origin scm && git push origin step-3
+git add -A && git commit -m "step-3: 填充 DESIGN.md 映射表（Batch 1 + Batch 2，4 个 API 域）"
+git tag step-3 && git push origin scm-from-zero && git push origin step-3
 ```
 
 ---
 
-### Step 4a — 实现 Objects API tools（只读批）
+### Step 4a — 全域只读 tool（Batch 1 的所有 list_* / get_*）
 
 **真实提示词（逐字）**：
 
 ```
-执行 WORKFLOW.md 阶段 2：实现。先实现 Objects API 的只读 tool（list_* 和 get_* 类），不含写操作。服从 CLAUDE.md 红线，按 DESIGN §3.1 映射表逐条实现。
+执行 WORKFLOW.md 阶段 2：实现。先实现 DESIGN.md Batch 1 中全部只读 tool（list_* 和 get_* 类），跨 Objects / Security / Operations / IAM 四个域，不含写操作。服从 CLAUDE.md 红线。
 
 先给实现计划（分几步，每步一个 commit），我确认后再逐步做。
 
 约束：
-- inputSchema 按 openapi-specs/scm/config/sase/objects/objects-june.yaml 中对应端点的 parameters 填写；folder/snippet/device/name/offset/limit 等公共查询参数用共享常量定义，不在每个 tool 里重复写
+- **以 DESIGN.md 映射表为唯一来源**，逐行实现，不跳过、不自行增减
+- inputSchema 从对应端点的 YAML parameters 现查填写；folder/snippet/device/name/offset/limit 等公共查询参数用共享常量定义，不在每个 tool 里重复写
 - tool 只做「组装请求 → rest_client.request → 透传响应」；非 2xx 按 DESIGN §4 返回 {error, status, body}
-- 用路由表驱动（dict 映射 tool 名 → (path, param_keys)），避免重复的 if/elif
+- 路由表驱动：_LIST_TOOLS = {tool名: (path, param_keys_tuple)}，_GET_BY_ID_TOOLS = {tool名: (path_template, param_keys_tuple)}；禁止 if/elif 分支
+- list_* 的 path 含 {id} 以外的 path 参数（如安全配置文件的 profile name）也用 _GET_BY_ID_TOOLS，path_template 里用 {name} 占位
 - 先搭 pytest 脚手架（mock rest_client.request），再实现 tool，每步跑测试
-- 不实现写操作 tool（create_*/update_*/delete_*），留给下一批
+- 不实现任何写操作 tool（create_*/update_*/delete_*/move_*/push_*）
 ```
 
-**教学点**：路由表驱动是本项目最重要的代码设计——37 个 tool 如果每个写一段 if/elif，代码会失控。`_LIST_TOOLS = {name: (path, param_keys)}` 让新增 tool 只需加一行字典条目。list 类 tool 的公共参数（folder/snippet/device/name/offset/limit）提取为常量，openapi 里这些参数在每个端点都重复出现，集中定义避免每个 tool 单独手写。
+**教学点**：路由表驱动是本项目最重要的代码设计——工具数量可能超过 50 个，如果每个写一段 if/elif 代码会失控。`_LIST_TOOLS` / `_GET_BY_ID_TOOLS` 各自一行字典条目就能注册一个 tool。「以 DESIGN.md 为唯一来源」是防止遗漏的核心原则：不按域分批、不按记忆决定——只要 DESIGN 里有、就实现，DESIGN 里没有、就不做。
 
-**验收**：`pytest -q` 通过（mock 层）；`tools/list` 能列出实现的只读 tool；调 `list_addresses`（传 folder 参数）返回 SCM 真实响应。
+**验收**：`pytest -q` 通过（mock 层）；DESIGN.md Batch 1 的全部只读 tool 都在 `tools/list` 里；抽查 `list_addresses`（folder 参数）、`get_job`、`get_service_account` 有路由条目。
 
 **提交**：
 ```bash
-git add -A && git commit -m "step-4a: 实现 Objects API 只读 tool（list/get 类，路由表驱动）"
-git tag step-4a && git push origin scm && git push origin step-4a
+git add -A && git commit -m "step-4a: 实现 Batch 1 全域只读 tool（list/get 类，路由表驱动）"
+git tag step-4a && git push origin scm-from-zero && git push origin step-4a
 ```
 
 ---
 
-### Step 4b — 实现 Objects API tools（写操作批）
+### Step 4b — 全域标准写操作 tool（Batch 1 的 create_* / update_* / delete_*）
 
 **真实提示词（逐字）**：
 
 ```
-继续实现 Objects API 的写操作 tool（create_*/update_*/delete_*），服从 CLAUDE.md 红线。
+继续实现 DESIGN.md Batch 1 中全部标准写操作 tool（create_* / update_* / delete_*），跨 Objects / Security / IAM 域。服从 CLAUDE.md 红线。
+
+move_* 和 push_* 等特殊操作留给下一步，本步只做标准 CRUD 的写操作部分。
 
 约束：
-- inputSchema 从 objects-june.yaml 中对应端点的 requestBody schema 提取；只填 openapi 明确定义的字段，不臆造
+- **以 DESIGN.md 映射表为唯一来源**，逐行实现，不跳过、不自行增减
+- inputSchema 从对应端点 YAML 的 requestBody schema 现查填写；只填 openapi 明确定义的字段，不臆造
 - create_* tool：container 参数（folder/snippet/device）走 query params，body 字段走 JSON body，两者分开传
 - update_* tool：id 在 path，body 只传调用方提供的非 None 字段（_pick 函数），不发平台已有值
 - delete_* tool：id 在 path，无 body
-- 写操作的单测：mock rest_client.request，断言 method=PUT/POST/DELETE 及 body 内容；不做真实 SCM 调用（写操作有副作用，真实测试需 @integration 标注）
+- 路由表驱动：_CREATE_TOOLS = {tool名: (path, container_keys, body_keys)}，_UPDATE_TOOLS / _DELETE_TOOLS 类似
+- 写操作的单测：mock rest_client.request，断言 method=POST/PUT/DELETE 及 body/params 内容；不做真实 SCM 调用（写操作有副作用，真实测试需 @integration 标注）
 - description 里每个写操作 tool 都要标注「⚠️ 写操作」
 ```
 
-**教学点**：SCM 写 API 的 container 参数（folder 等）走 query params 而不是 body——这是从 openapi YAML 现查得到的，不能臆造。`_pick()` 工具函数只取非 None 字段组装 body，让调用方可以只传要改的字段（PATCH 语义），而不强制要求传全量。
+**教学点**：SCM 写 API 的 container 参数（folder 等）走 query params 而不是 body——这是从 openapi YAML 现查得到的，不能臆造。`_pick()` 工具函数只取非 None 字段组装 body，让调用方只传要改的字段，不强制全量。「以 DESIGN.md 为唯一来源」同样适用：security_rules、decryption_rules、app_override_rules、dos_protection_rules 的 create/update/delete 都在这一步实现，不能漏。
 
-**验收**：写操作 tool 单测（mock）全部通过；`create_address` + `delete_address` 集成测试（`@integration`，默认跳过）可手动运行。
+**验收**：写操作 tool 单测（mock）全部通过；DESIGN.md Batch 1 的全部 create_*/update_*/delete_* 均有路由条目；抽查 `create_address`、`create_security_rule`、`delete_decryption_rule` 集成测试（`@integration`，默认跳过）可手动运行。
 
 **提交**：
 ```bash
-git add -A && git commit -m "step-4b: 实现 Objects API 写操作 tool（create/update/delete，_pick 函数）"
-git tag step-4b && git push origin scm && git push origin step-4b
+git add -A && git commit -m "step-4b: 实现 Batch 1 全域标准写操作 tool（create/update/delete，_pick 函数）"
+git tag step-4b && git push origin scm-from-zero && git push origin step-4b
 ```
 
 ---
 
-### Step 5 — 实现 Security / Operations / IAM tools
+### Step 5 — 特殊操作 tool + Batch 1 收口
 
 **真实提示词（逐字）**：
 
 ```
-继续实现剩余三个 API 域的 tool，按 DESIGN §3.2–3.4 映射表，严格阶段 1→2 顺序。
+继续实现 DESIGN.md Batch 1 中剩余的特殊操作 tool，然后做 Batch 1 的路由完整性收口。服从 CLAUDE.md 红线。
 
-Security（security-services-R2-2026.yaml）：
-- security_rules：完整 CRUD（list/create/get/update/delete）
-- 安全配置文件：list_anti_spyware_profiles、list_vulnerability_profiles、list_wildfire_profiles、list_dns_security_profiles、list_url_categories、list_decryption_rules、list_decryption_profiles——均只读，路由表驱动
-
-Operations（config-operations-march.yaml）：
-- list_jobs、get_job、list_config_versions——只读
-- push_candidate_config（POST /config-versions/candidate:push）——写操作，⚠️ 会触发真实配置下发，description 必须清晰警示
-
-IAM（ServiceAccounts/Roles/AccessPolicies YAML）：
-- list_service_accounts、list_roles、list_access_policies——均只读
+特殊操作类型（需独立路由表 _MOVE_TOOLS / _PUSH_TOOLS 或单独处理）：
+- move_security_rule（POST /config/security/v1/security-rules/{id}:move）
+- move_decryption_rule（POST /config/security/v1/decryption-rules/{id}:move）
+- move_app_override_rule（POST /config/security/v1/app-override-rules/{id}:move）
+- push_candidate_config（POST /config/operations/v1/config-versions/candidate:push）
 
 约束：
-- push_candidate_config 的 body 有 folders/devices/admin/description 四个字段，从 YAML 现查，不臆造；folders 和 devices 互斥但可任选其一，不强制必填（交平台 400 处理）
-- 安全配置文件类 tool（7 个只读）用同一路由表 _LIST_TOOLS 统一处理，不单独写 if/elif
-- 每步 commit + pytest 单测（mock）
+- **以 DESIGN.md 映射表为唯一来源**：只实现 Batch 1 里列出的特殊操作，不自行新增
+- move_* tool 的 body 字段（destination、rulebase、where、pivot_rule_id）从对应 YAML 现查；description 标注「⚠️ 写操作，会改变规则顺序」
+- push_candidate_config 的 body 字段从 config-operations-march.yaml 现查，不臆造；description 必须加「⚠️ 高风险写操作：会将候选配置下发到真实设备」
+- 路由表驱动：_MOVE_TOOLS = {tool名: (path_template, body_keys)}；push_* 因参数特殊可单独实现
+- 每步 commit + pytest 单测（mock），断言 method=POST 及 body/path 正确
+- 收口：写一段断言，验证 DESIGN.md Batch 1 的全部 tool 名 == 当前已注册 tool 名集合，无遗漏、无多余
 ```
 
-**教学点**：`push_candidate_config` 是本项目风险最高的 tool——它会真实下发配置到防火墙。description 里的 ⚠️ 警示不是装饰，是让 Claude 在调用前向用户确认的信号。7 个安全配置文件只读 tool 全部进 `_LIST_TOOLS`，证明路由表扩展零成本（加一行字典条目即可）。
+**教学点**：`push_candidate_config` 是本项目风险最高的 tool——它会真实下发配置到防火墙，description 里的 ⚠️ 警示让 Claude 在调用前向用户二次确认。`move_*` 系列是"同域 CRUD 之外"最容易被遗漏的操作——它们是 POST 请求但不是 create，需要单独路由表。收口断言是机械保证：不靠人工数，让程序验证 Batch 1 没有漏洞。
 
-**验收**：37 个 tool 全部注册；路由完整性验证通过（`set(TOOLS) == routed`）；`push_candidate_config` 单测验证 method=POST 且 body 字段正确。
+**验收**：Batch 1 全部 tool 注册完毕；路由完整性断言通过；`push_candidate_config` 单测验证 method=POST 且 body 字段正确；`move_security_rule` 单测验证 path 含 id 且 body 含 destination。
 
 **提交**：
 ```bash
-git add -A && git commit -m "step-5: 实现 Security / Operations / IAM tools（37 个 tool 全部注册）"
-git tag step-5 && git push origin scm && git push origin step-5
+git add -A && git commit -m "step-5: 实现特殊操作 tool（move/push），完成 Batch 1 收口"
+git tag step-5 && git push origin scm-from-zero && git push origin step-5
+```
+
+---
+
+### Step 5b — Batch 2 扩展 tool（按需执行）
+
+**真实提示词（逐字）**：
+
+```
+执行 DESIGN.md Batch 2：扩展 tool 实现。先实现只读部分，再实现写操作部分。服从 CLAUDE.md 红线。
+
+先给实现计划（列出 Batch 2 中所有 tool，按域分组），我确认后再逐域实现。
+
+约束：
+- **以 DESIGN.md Batch 2 映射表为唯一来源**，逐行实现，不跳过、不自行增减
+- 新 tool 沿用 Step 4a/4b 建立的路由表结构，只追加字典条目，不新建分支逻辑
+- inputSchema 从对应端点 YAML 现查；Objects 扩展资源（applications、schedules、hip_objects 等）用 objects-june.yaml；Security 档案类（anti_spyware_profiles 等）用 security-services-R2-2026.yaml
+- 写操作 tool description 标注「⚠️ 写操作」；push/move 类若有也单独处理
+- 每新增一组资源（如 hip_objects）commit 一次 + pytest 跑通
+- Batch 2 收口：更新路由完整性断言，覆盖 Batch 1 + Batch 2 全部 tool
+```
+
+**教学点**：Batch 2 的价值在于**路由表架构的可扩展性验证**——新增 60 个 tool 只需往字典里追加条目，不改任何分发逻辑。这证明了 Step 4a 建立的架构是对的。如果你发现需要改分发逻辑，说明架构有问题，要回头重构而不是打补丁。
+
+**验收**：Batch 2 全部 tool 注册；路由完整性断言覆盖 Batch 1 + Batch 2；`pytest -q` 通过（mock 层）；抽查 `list_hip_objects`、`create_anti_spyware_profile` 有路由条目。
+
+**提交**：
+```bash
+git add -A && git commit -m "step-5b: 实现 Batch 2 扩展 tool（Objects 扩展 + Security 档案类）"
+git tag step-5b && git push origin scm-from-zero && git push origin step-5b
 ```
 
 ---
@@ -321,18 +361,18 @@ git tag step-5 && git push origin scm && git push origin step-5
 执行 WORKFLOW.md 阶段 3：验收收口。先不扩新端点，把当前批次收口。先给计划我确认。
 
 1. 语法自检：写一个内联脚本，对 src/scm_mcp/ 下全部 .py 文件跑 ast.parse，全通才算过。
-2. 路由完整性验证：断言 TOOLS 列表中的 tool 名称集合 == 五张路由表的 key 合集，无遗漏、无多余。
-3. stdio 冒烟（scripts/smoke_stdio.py）：用官方 mcp SDK 的 client over stdio 驱动本 server，跑完整握手：initialize → tools/list（断言 37 个 tool 且名称集合完全匹配）→ call_tool(list_jobs, {limit:1})，打印返回。证明它作为真实 MCP server 在传输层可用，而非只是直调 tools.call()。
-4. 更新 README：补 37 个 tool 的分类列表；给出 Claude Desktop / Cursor 的注册 JSON（command/args/env=SCM_*/）；加"连通性自检"一节。
+2. 路由完整性验证：断言 TOOLS 列表中的 tool 名称集合 == 全部路由表的 key 合集，无遗漏、无多余。
+3. stdio 冒烟（scripts/smoke_stdio.py）：用官方 mcp SDK 的 client over stdio 驱动本 server，跑完整握手：initialize → tools/list（断言 tool 数量与 DESIGN.md 一致，名称集合完全匹配）→ call_tool(list_jobs, {limit:1})，打印返回。证明它作为真实 MCP server 在传输层可用，而非只是直调 tools.call()。
+4. 更新 README：补当前所有 tool 的分类列表；给出 Claude Desktop / Cursor 的注册 JSON（command/args/env=SCM_*/）；加"连通性自检"一节。
 5. 更新 WORKFLOW.md 验收记录：对照 docs/PRD.md §4 的 A1–A7 逐条标注结论 + 验证命令/证据。
 
 约束：不新增 tool；不改已有 tool 行为；docs/ 相关文件一并检查是否需要同步更新。
 完成后给 commit message。
 ```
 
-**教学点**：冒烟用真实 MCP **client** 驱动 server，证明**传输层**可用（而非只直调 `tools.call()`）。路由完整性验证是"不漏 tool"的机械保证。37 个 tool 如果靠人工数容易出错，程序断言不会。
+**教学点**：冒烟用真实 MCP **client** 驱动 server，证明**传输层**可用（而非只直调 `tools.call()`）。路由完整性验证是"不漏 tool"的机械保证。tool 数量靠人工数容易出错，程序断言不会。Step 6 无论在 Batch 1 收口还是 Batch 2 完成后都可以重新执行——它是状态无关的质量门。
 
-**验收**：`python -c "import ast, ..."` → 7 文件全部 OK；路由完整性 → 37 tools, All routing entries present；`python scripts/smoke_stdio.py` → SMOKE OK；WORKFLOW 验收记录 A1–A7 全部填写。
+**验收**：`python -c "import ast, ..."` → 全部文件 OK；路由完整性 → All routing entries present；`python scripts/smoke_stdio.py` → SMOKE OK；WORKFLOW 验收记录 A1–A7 全部填写。
 
 **提交**：
 ```bash
@@ -344,15 +384,29 @@ git tag step-6 && git push origin scm && git push origin step-6
 
 ## 3. SCM API 端点覆盖盘点
 
-| 域 | 只读 tool | 写操作 tool | 排除/后续 |
-| --- | --- | --- | --- |
-| Objects | list/get × 地址/地址组 + list × 服务/服务组/标签/应用组/EDL | create/update/delete × 地址/地址组/服务/服务组/标签 + create_security_rule | SASE 网络配置等高复杂度端点（后续批次） |
-| Security | list/get × 安全规则 + list × 7 类安全配置文件 | create/update/delete × 安全规则 | — |
-| Operations | list_jobs / get_job / list_config_versions | push_candidate_config | — |
-| IAM | list × 服务账号/角色/访问策略 | — | IAM 写操作（后续批次） |
-| Auth | — | — | 全部内化到 auth.py，不暴露 tool |
+### Batch 1（MVP，随 Step 4–5 实现）
 
-合计：**37 tool（25 只读 + 12 写）**；Auth 域完全内化；高复杂度端点显式推迟。
+| 域 | 只读 tool | 写操作 tool |
+| --- | --- | --- |
+| Objects（核心） | list/get × 地址/地址组/服务/服务组/标签/应用组/EDL | create/update/delete × 地址/地址组/服务/服务组/标签 |
+| Security | list/get × 安全规则/解密规则/应用覆盖规则/DoS防护规则 + list × 全部安全配置文件档案 | create/update/delete × 安全规则/解密规则/应用覆盖规则/DoS防护规则 + move × 安全规则/解密规则/应用覆盖规则 |
+| Operations | list_jobs / get_job / list_config_versions / get_config_version / get_running_config_version | push_candidate_config（⚠️ 高风险）|
+| IAM | list/get × 服务账号/角色/访问策略 | — |
+| Auth | — | — 全部内化到 auth.py |
+
+### Batch 2（扩展，Step 5b 实现）
+
+| 域 | 资源 | 操作 |
+| --- | --- | --- |
+| Objects（扩展） | applications / application_filters / application_groups / schedules / regions / external_dynamic_lists / dynamic_user_groups / hip_objects / hip_profiles / http_server_profiles / log_forwarding_profiles / syslog_server_profiles | 各 5 个 CRUD（list/get/create/update/delete）|
+| Security（档案类） | anti_spyware_profiles / anti_spyware_signatures / data_filtering_profiles / data_objects / decryption_exclusions / decryption_profiles / dns_security_profiles / dos_protection_profiles / file_blocking_profiles / http_header_profiles / profile_groups / url_access_profiles / url_categories / vulnerability_protection_profiles / vulnerability_protection_signatures / wildfire_anti_virus_profiles | 各 4–5 个 CRUD |
+
+### 永久排除
+
+| 原因 | 内容 |
+| --- | --- |
+| Auth 内部化 | 所有 `/auth/v1/oauth2/*` 端点，由 `auth.py` 处理，不暴露 tool |
+| 高复杂度推迟 | SASE deployment、mobile agent、network infrastructure 配置类端点 |
 
 ---
 
