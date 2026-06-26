@@ -1,84 +1,85 @@
 # CLAUDE.md — L1 工程契约
 
-> 本文件是项目的最高约束（L1）。L2（`DESIGN.md`）、L3（`WORKFLOW.md`）必须服从本文件。
-> 当任何下层文档或代码与本文件冲突时，以本文件为准。
+## 项目身份
 
-## 1. 项目身份
+**scm-mcp-server**：通过 MCP stdio 接口将 Palo Alto Networks Strata Cloud Manager (SCM) REST API 暴露给 AI 助手的 Python 服务。
 
-本项目是一个 **MCP server**，把 **Palo Alto Networks Strata Cloud Manager（SCM）** 的 REST API 封装成一组 MCP tools，供 Claude Desktop / Cursor / Claude Code 等 MCP 客户端调用。
+服务只做参数透传与协议适配，不重写任何 SCM 业务逻辑。
 
-它**不是**新平台、**不是**业务后端、**不是** REST 网关重写。它只是 SCM REST API 的一层 MCP 适配壳。
+---
 
-## 2. 技术栈（钉死，不许更换）
+## 技术栈（禁止替换）
 
-| 项 | 选定 | 说明 |
-|---|---|---|
-| 语言 | **Python 3.10+** | 不引入其他语言 |
-| MCP 框架 | **官方 `mcp` SDK** | 不用第三方 MCP 实现 |
-| 传输 | **stdio** | 只此一种，不加 HTTP/SSE/WebSocket 传输 |
-| HTTP 客户端 | **`httpx`** | 调 SCM REST 用 |
+| 组件 | 指定版本/库 | 禁止替换为 |
+|------|------------|-----------|
+| 语言 | Python 3.11+ | — |
+| MCP SDK | `mcp`（官方，`pip install mcp`） | 任何第三方 MCP 封装 |
+| HTTP 客户端 | `httpx`（异步） | requests、aiohttp 等 |
+| 传输层 | stdio | SSE、HTTP、WebSocket |
+| 依赖管理 | `pyproject.toml` | setup.py、requirements.txt 作为主文件 |
 
-> 如需更换上述任一项，必须先修改本文件并说明理由，不得在代码里悄悄替换。
+---
 
-## 3. 目录约定
+## 目录约定
 
 ```
-vibecoding-mcp-server/
-├── CLAUDE.md              # L1 工程契约（本文件）
-├── DESIGN.md              # L2 设计：MCP tool ↔ REST 端点映射
-├── WORKFLOW.md            # L3 阶段协议
-├── README.md              # 给人看：怎么跑、怎么注册
-├── .env.example           # 环境变量示例
-├── pyproject.toml         # 包配置
-├── docs/
-│   └── PRD.md             # 产品需求：目标用户、功能边界、验收标准、风险
-├── scripts/
-│   └── smoke_stdio.py     # stdio 协议级冒烟测试
-├── tests/                 # pytest 单测（mock REST）+ 可选 @integration
-└── src/scm_mcp/           # 源代码
-    ├── __init__.py
-    ├── server.py          # MCP server 入口
-    ├── config.py          # 环境变量读取
-    ├── auth.py            # OAuth2 client_credentials token 管理
-    ├── rest_client.py     # SCM REST 薄封装
-    ├── tools.py           # MCP tool 定义与分发
-    └── check.py           # 连通性自检
+scm_mcp_server/
+  __init__.py
+  server.py          # MCP server 入口；注册所有 tool，启动 stdio loop
+  auth.py            # OAuth2 client_credentials token 获取与内存缓存
+  client.py          # httpx AsyncClient 封装；统一 Bearer header、base_url、error mapping
+  tools/
+    __init__.py
+    objects.py       # 地址/地址组/服务/服务组/标签等对象 CRUD
+    security.py      # 安全策略规则 CRUD + move
+    incidents.py     # 告警搜索与详情查询
+    deployment.py    # 部署状态查询（预留）
+openapi-specs -> ../pan.dev/openapi-specs  # 软链，只读；禁止修改其中任何文件
+tests/
+  test_auth.py
+  test_client.py
+  test_tools.py
+pyproject.toml
+.env.example
+CLAUDE.md
+DESIGN.md
+WORKFLOW.md
+README.md
+docs/
+  PRD.md             # 产品需求文档（目标用户、MVP 边界、验收标准、风险）
 ```
 
-## 4. 禁止事项（红线）
+---
 
-- ❌ **不手抄、不臆造 schema**。所有 tool 的入参/出参 schema，唯一权威来源是 `openapi-specs/scm/` 下的 YAML 文件。
-- ❌ **不重写 SCM 业务逻辑**。MCP tool 只做「组装请求 → 调 REST → 透传结果」。
-- ❌ **不硬编码 base URL 与凭据**。地址和凭据一律走环境变量（见 §5）。
-- ❌ **不增加传输方式**。只 stdio。
-- ❌ **不绕过 REST 直连数据库 / 文件系统**。
+## 环境变量（凭据唯一来源）
 
-## 5. 必须执行
+| 变量 | 说明 | 是否必填 |
+|------|------|---------|
+| `SCM_CLIENT_ID` | OAuth2 Client ID | 必填 |
+| `SCM_CLIENT_SECRET` | OAuth2 Client Secret | 必填 |
+| `SCM_TSG_ID` | Tenant Service Group ID | 必填 |
+| `SCM_BASE_URL` | API 基址 | 选填，默认 `https://api.strata.paloaltonetworks.com` |
 
-- ✅ SCM 凭据通过 `SCM_CLIENT_ID` / `SCM_CLIENT_SECRET` / `SCM_TSG_ID` 读取。
-- ✅ SCM API 基址通过 `SCM_BASE_URL` 读取，默认 `https://api.strata.paloaltonetworks.com`。
-- ✅ Auth URL 通过 `SCM_AUTH_URL` 读取，默认 `https://auth.apps.paloaltonetworks.com`。
-- ✅ 每个 MCP tool 必须能一一追溯到 `DESIGN.md §3` 中的一个具体 REST 端点（方法 + 路径）。
-- ✅ access token 由 `auth.py` 统一管理，15 分钟内自动刷新，不在 tool 层处理鉴权。
+---
 
-## 6. SCM API 端点基址（参考）
+## 禁止事项
 
-| 分类 | 基址 |
-|---|---|
-| Auth | `https://auth.apps.paloaltonetworks.com` |
-| Objects | `https://api.strata.paloaltonetworks.com/config/objects/v1` |
-| Security | `https://api.strata.paloaltonetworks.com/config/security/v1` |
-| Operations | `https://api.strata.paloaltonetworks.com/config/operations/v1` |
-| IAM | `https://api.strata.paloaltonetworks.com/iam/v1` |
+1. **禁止硬编码**任何凭据、URL、tenant ID。
+2. **禁止手抄或臆造 schema**；所有 tool 的 `inputSchema` / 出参字段必须来自 `openapi-specs/scm/` 下对应 YAML 文件的 `parameters` 或 `requestBody`。
+3. **禁止重写业务逻辑**；server 只透传参数，由 SCM REST API 执行逻辑。
+4. **禁止切换传输层**；始终保持 stdio。
+5. **禁止修改** `openapi-specs/` 目录下任何文件。
+6. **禁止**将 Auth 端点（`/auth/v1/oauth2/access_token`）暴露为 MCP tool；token 管理在 `auth.py` 内部完成。
 
-## 7. OpenAPI 规范来源
+---
 
-位于 `../pan.dev/openapi-specs/scm/`（本仓库外），所用文件：
+## 必须执行
 
-- `auth/AuthService.yaml`
-- `config/sase/objects/objects-june.yaml`
-- `config/sase/security/security-services-R2-2026.yaml`
-- `config/sase/operations/config-operations-march.yaml`
-- `iam/ServiceAccounts.yaml`
-- `iam/Roles.yaml`
-- `iam/AccessPolicies.yaml`
+- 每个 tool 的 `inputSchema` 注释须标注来源 YAML 路径，格式：
+  ```python
+  # ref: openapi-specs/scm/config/sase/objects/objects-june.yaml#/components/schemas/Address
+  ```
+- `auth.py` 必须实现 token 内存缓存，依据 `expires_in` 在到期前自动刷新（建议提前 60 秒）。
+- HTTP 4xx / 5xx 统一在 `client.py` 捕获，转为 MCP `error` 返回，不允许 unhandled exception 穿透到 MCP layer。
+- 每个 Phase 完成后必须所有测试绿灯才能进入下一 Phase（见 WORKFLOW.md）。
+- 新增 tool 时同步更新 DESIGN.md 的 tool 列表。

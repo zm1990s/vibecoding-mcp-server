@@ -1,52 +1,52 @@
-"""config 模块：环境变量读取与缺失时的错误行为。"""
-
+"""
+验证 config.load() 对缺失必填变量的行为。
+"""
+import os
 import pytest
-
-from scm_mcp import config
-
-
-def test_base_url_default(monkeypatch):
-    monkeypatch.delenv("SCM_BASE_URL", raising=False)
-    assert config.get_base_url() == "https://api.strata.paloaltonetworks.com"
+from unittest.mock import patch
 
 
-def test_base_url_override(monkeypatch):
-    monkeypatch.setenv("SCM_BASE_URL", "https://my-scm.example.com/")
-    assert config.get_base_url() == "https://my-scm.example.com"  # 去尾斜杠
+def test_missing_all_required_raises():
+    with patch.dict(os.environ, {}, clear=True):
+        from scm_mcp_server import config
+        with pytest.raises(RuntimeError) as exc_info:
+            config.load()
+    msg = str(exc_info.value)
+    assert "SCM_CLIENT_ID" in msg or "SCM_CLIENT_SECRET" in msg or "SCM_TSG_ID" in msg
 
 
-def test_auth_url_default(monkeypatch):
-    monkeypatch.delenv("SCM_AUTH_URL", raising=False)
-    assert config.get_auth_url() == "https://auth.apps.paloaltonetworks.com"
+def test_missing_one_required_raises():
+    env = {"SCM_CLIENT_ID": "id", "SCM_CLIENT_SECRET": "secret"}
+    with patch.dict(os.environ, env, clear=True):
+        from scm_mcp_server import config
+        with pytest.raises(RuntimeError) as exc_info:
+            config.load()
+    assert "SCM_TSG_ID" in str(exc_info.value)
 
 
-def test_auth_url_override(monkeypatch):
-    monkeypatch.setenv("SCM_AUTH_URL", "https://auth.example.com/")
-    assert config.get_auth_url() == "https://auth.example.com"
+def test_all_required_present_returns_dict():
+    env = {
+        "SCM_CLIENT_ID": "id",
+        "SCM_CLIENT_SECRET": "secret",
+        "SCM_TSG_ID": "tsg123",
+    }
+    with patch.dict(os.environ, env, clear=True):
+        from scm_mcp_server import config
+        cfg = config.load()
+    assert cfg["client_id"] == "id"
+    assert cfg["client_secret"] == "secret"
+    assert cfg["tsg_id"] == "tsg123"
+    assert cfg["base_url"] == "https://api.strata.paloaltonetworks.com"
 
 
-def test_client_id_missing(monkeypatch):
-    monkeypatch.delenv("SCM_CLIENT_ID", raising=False)
-    with pytest.raises(RuntimeError, match="SCM_CLIENT_ID"):
-        config.get_client_id()
-
-
-def test_client_secret_missing(monkeypatch):
-    monkeypatch.delenv("SCM_CLIENT_SECRET", raising=False)
-    with pytest.raises(RuntimeError, match="SCM_CLIENT_SECRET"):
-        config.get_client_secret()
-
-
-def test_tsg_id_missing(monkeypatch):
-    monkeypatch.delenv("SCM_TSG_ID", raising=False)
-    with pytest.raises(RuntimeError, match="SCM_TSG_ID"):
-        config.get_tsg_id()
-
-
-def test_all_required_set(monkeypatch):
-    monkeypatch.setenv("SCM_CLIENT_ID", "cid")
-    monkeypatch.setenv("SCM_CLIENT_SECRET", "secret")
-    monkeypatch.setenv("SCM_TSG_ID", "tsg123")
-    assert config.get_client_id() == "cid"
-    assert config.get_client_secret() == "secret"
-    assert config.get_tsg_id() == "tsg123"
+def test_custom_base_url():
+    env = {
+        "SCM_CLIENT_ID": "id",
+        "SCM_CLIENT_SECRET": "secret",
+        "SCM_TSG_ID": "tsg123",
+        "SCM_BASE_URL": "https://custom.example.com/",
+    }
+    with patch.dict(os.environ, env, clear=True):
+        from scm_mcp_server import config
+        cfg = config.load()
+    assert cfg["base_url"] == "https://custom.example.com"  # trailing slash stripped
