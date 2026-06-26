@@ -457,6 +457,56 @@ git tag step-6 && git push origin scm && git push origin step-6
 
 ---
 
+### Step 7 — 注册到 Claude 并做真实调用测试
+
+**目标**：把 MCP server 接入 Claude，用自然语言完成一次端到端的真实 SCM 调用，确认整条链路（Claude → stdio → scm_mcp_server → SCM REST API）打通。
+
+#### 7.1 用自然语言让 Claude 安装 MCP
+
+你已经在用 Claude CLI 写这个项目了，直接在对话框里说：
+
+```
+帮我把当前目录下的 scm_mcp_server 注册为 MCP server，
+命令是 python -m scm_mcp_server，
+环境变量：
+  SCM_CLIENT_ID=<你的 client id>
+  SCM_CLIENT_SECRET=<你的 secret>
+  SCM_TSG_ID=<你的 tsg id>
+```
+
+Claude 会自动修改配置文件并完成注册，无需手动编辑 JSON。
+
+#### 7.2 重启 Claude 使配置生效
+
+注册完成后，**完全退出再重新打开 Claude**（不能只关窗口）。重启后新的 MCP server 才会加载。
+
+#### 7.3 调用测试（建议顺序）
+
+重启后在新对话里依次测试：
+
+```
+用 scm MCP 列出 Prisma Access 文件夹下的前 5 个地址对象
+```
+预期：调用 `list_addresses`，返回地址列表，无报错。
+
+```
+查询 SCM 最近的配置推送任务状态
+```
+预期：调用 `list_jobs`，返回 job 列表和各任务状态。
+
+```
+在 Prisma Access 文件夹下创建一个测试地址对象，名称 test-from-mcp，ip_netmask 为 192.0.2.1/32
+```
+预期：调用 `create_address`，返回新对象 ID；可在 SCM 控制台确认对象已存在。
+
+**提交**：
+```bash
+git add -A && git commit -m "step-7: 注册到 Claude，端到端调用验证通过"
+git tag step-7 && git push origin scm-from-zero && git push origin step-7
+```
+
+---
+
 ## 4. SCM API 端点覆盖盘点
 
 ### Batch 1（MVP，随 Step 4–5 实现）
@@ -524,56 +574,6 @@ python scripts/smoke_stdio.py
 - **每步先给计划、等确认后再执行**（提示词里的 gating 不要删）。
 - **阶段 1（填表）和阶段 2（写代码）严格不混**：先确认 DESIGN 映射表完整，再写任何 tool 代码。
 - **写操作默认不做真实集成测试**：需要真实调用时加 `@pytest.mark.integration` 且默认 deselect。
-
----
-
-### Step 7 — 注册到 Claude 并做真实调用测试
-
-**目标**：把 MCP server 接入 Claude，用自然语言完成一次端到端的真实 SCM 调用，确认整条链路（Claude → stdio → scm_mcp_server → SCM REST API）打通。
-
-#### 7.1 用自然语言让 Claude 安装 MCP
-
-你已经在用 Claude CLI 写这个项目了，直接在对话框里说：
-
-```
-帮我把当前目录下的 scm_mcp_server 注册为 MCP server，
-命令是 python -m scm_mcp_server，
-环境变量：
-  SCM_CLIENT_ID=<你的 client id>
-  SCM_CLIENT_SECRET=<你的 secret>
-  SCM_TSG_ID=<你的 tsg id>
-```
-
-Claude 会自动修改配置文件并完成注册，无需手动编辑 JSON。
-
-#### 7.2 重启 Claude 使配置生效
-
-注册完成后，**完全退出再重新打开 Claude**（不能只关窗口）。重启后新的 MCP server 才会加载。
-
-#### 7.3 调用测试（建议顺序）
-
-重启后在新对话里依次测试：
-
-```
-用 scm MCP 列出 Prisma Access 文件夹下的前 5 个地址对象
-```
-预期：调用 `list_addresses`，返回地址列表，无报错。
-
-```
-查询 SCM 最近的配置推送任务状态
-```
-预期：调用 `list_jobs`，返回 job 列表和各任务状态。
-
-```
-在 Prisma Access 文件夹下创建一个测试地址对象，名称 test-from-mcp，ip_netmask 为 192.0.2.1/32
-```
-预期：调用 `create_address`，返回新对象 ID；可在 SCM 控制台确认对象已存在。
-
-**提交**：
-```bash
-git add -A && git commit -m "step-7: 注册到 Claude，端到端调用验证通过"
-git tag step-7 && git push origin scm-from-zero && git push origin step-7
-```
 
 ---
 
