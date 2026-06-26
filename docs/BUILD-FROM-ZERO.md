@@ -22,7 +22,7 @@
 
 | 项 | 选定 |
 | --- | --- |
-| 语言 | Python 3.10+ |
+| 语言 | Python 3.11+ |
 | MCP | 官方 `mcp` SDK |
 | 传输 | stdio（唯一） |
 | HTTP | `httpx` |
@@ -245,12 +245,12 @@ git tag step-1 && git push origin scm && git push origin step-1
   - check.py：连通性自检（获取 token + 调一次 GET /config/operations/v1/jobs），退出码 0/1
 - 不要生成任何具体 tool。tool↔端点映射当前为 _TBD_，其填充是 WORKFLOW.md 阶段 1 的第一步。
 
-验收命令需可实际运行：pip install -e .、python -m scm_mcp.check（配好凭据后）、stdio 启动不报错、tools/list 返回空列表。
+验收命令需可实际运行：pip install -e .、python -m scm_mcp_server.check（配好凭据后）、stdio 启动不报错、tools/list 返回空列表。
 ```
 
 **教学点**：骨架先于 tool。`auth.py` 独立成模块是 SCM 与日志分析版的最大区别——OAuth2 刷新逻辑有状态（缓存 + 锁），不应混进 rest_client。`check.py` 的自检分两步：先拿 token（验证凭据），再调 API（验证权限），两步分开报错让故障更易定位。
 
-**验收**：`pip install -e .` 通过；`python -m scm_mcp.check` 在凭据正确时输出 `OK`；`tools/list` 返回 `[]`。
+**验收**：`pip install -e .` 通过；`python -m scm_mcp_server.check` 在凭据正确时输出 `OK`；`tools/list` 返回 `[]`。
 
 **提交**：
 ```bash
@@ -435,7 +435,7 @@ git tag step-5b && git push origin scm-from-zero && git push origin step-5b
 ```
 执行 WORKFLOW.md 阶段 3：验收收口。先不扩新端点，把当前批次收口。先给计划我确认。
 
-1. 语法自检：写一个内联脚本，对 src/scm_mcp/ 下全部 .py 文件跑 ast.parse，全通才算过。
+1. 语法自检：写一个内联脚本，对 scm_mcp_server/ 下全部 .py 文件跑 ast.parse，全通才算过。
 2. 路由完整性验证：断言 TOOLS 列表中的 tool 名称集合 == 全部路由表的 key 合集，无遗漏、无多余。
 3. stdio 冒烟（scripts/smoke_stdio.py）：用官方 mcp SDK 的 client over stdio 驱动本 server，跑完整握手：initialize → tools/list（断言 tool 数量与 DESIGN.md 一致，名称集合完全匹配）→ call_tool(list_jobs, {limit:1})，打印返回。证明它作为真实 MCP server 在传输层可用，而非只是直调 tools.call()。
 4. 更新 README：补当前所有 tool 的分类列表；给出 Claude CLI / Cursor 的注册方式（command/args/env=SCM_*/）；加"连通性自检"一节。
