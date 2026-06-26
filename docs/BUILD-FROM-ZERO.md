@@ -44,7 +44,81 @@
 
 ---
 
-## 2. 逐步轨迹
+## 2. 前置条件：下载 OpenAPI 规范文件
+
+> **必须在 Step 0 之前完成。** 后续所有步骤的 schema 来源都依赖这些文件；若缺失，AI 无法从 YAML 现查字段定义，只能靠"印象"臆造，导致代码跑不通。
+
+### 为什么需要这一步
+
+本项目的 `openapi-specs` 是一个软链接，指向同级目录 `../pan.dev/openapi-specs/`。原始文件托管在 PAN 官方 GitHub 仓库：
+
+> **[https://github.com/PaloAltoNetworks/pan.dev/tree/master/openapi-specs](https://github.com/PaloAltoNetworks/pan.dev/tree/master/openapi-specs)**
+
+pan.dev 仓库体积较大（含大量文档站资产），**推荐用 sparse checkout 只下载 `openapi-specs/` 子目录**，约 20–30 MB，完整克隆约 1 GB+。
+
+### 下载步骤（sparse checkout，推荐）
+
+```bash
+# 1. 在项目的上级目录操作（与 vibecoding-mcp-server/ 并列）
+cd /path/to/AI   # 替换为你自己的路径，例如 ~/projects
+
+# 2. 初始化 sparse clone（只拉元数据，不拉文件内容）
+git clone --filter=blob:none --sparse \
+  https://github.com/PaloAltoNetworks/pan.dev.git
+
+# 3. 进入仓库，指定只检出 openapi-specs/ 目录
+cd pan.dev
+git sparse-checkout set openapi-specs
+
+# 4. 验证关键文件存在
+ls openapi-specs/scm/config/sase/objects/
+ls openapi-specs/scm/config/sase/security/
+ls openapi-specs/scm/iam/
+```
+
+完成后目录结构应为：
+
+```
+AI/                              ← 你的工作目录
+├── pan.dev/
+│   └── openapi-specs/
+│       └── scm/
+│           ├── auth/AuthService.yaml
+│           ├── config/sase/objects/objects-june.yaml
+│           ├── config/sase/security/security-services-R2-2026.yaml
+│           ├── config/sase/operations/config-operations-march.yaml
+│           └── iam/ServiceAccounts.yaml  Roles.yaml  AccessPolicies.yaml
+└── vibecoding-mcp-server/
+    └── openapi-specs -> ../pan.dev/openapi-specs  ← 软链接（已建好）
+```
+
+软链接 `openapi-specs` 在仓库中已建好，pan.dev 放到正确位置后会自动生效，无需手动操作。
+
+### 验证软链接是否正常
+
+```bash
+cd vibecoding-mcp-server
+ls -la openapi-specs        # 应显示 -> ../pan.dev/openapi-specs
+ls openapi-specs/scm/       # 应能列出 auth/ config/ iam/ 等子目录
+```
+
+如果 `ls openapi-specs/scm/` 报错，说明 pan.dev 的位置不对——检查它是否与 `vibecoding-mcp-server/` 在同一个父目录下。
+
+### 如果不想用软链接
+
+也可以直接把 openapi-specs 内容放进项目目录：
+
+```bash
+# 在项目根目录执行
+rm openapi-specs                          # 删掉软链接
+cp -r ../pan.dev/openapi-specs ./openapi-specs   # 复制实体目录
+```
+
+复制后记得在 `.gitignore` 里加上 `openapi-specs/`，避免把几十 MB 的 YAML 推进仓库。
+
+---
+
+## 3. 逐步轨迹
 
 > 每节：**真实提示词（逐字，可直接复制）** → 关键决策/教学点 → 验收 → **commit / tag / push**。
 > ⚠️ 下面的提示词是构建时**原样使用**的——红线约束、⚠️ 副作用提醒、"先给计划我确认"的 gating 一字未删。
@@ -382,7 +456,7 @@ git tag step-6 && git push origin scm && git push origin step-6
 
 ---
 
-## 3. SCM API 端点覆盖盘点
+## 4. SCM API 端点覆盖盘点
 
 ### Batch 1（MVP，随 Step 4–5 实现）
 
@@ -410,29 +484,38 @@ git tag step-6 && git push origin scm && git push origin step-6
 
 ---
 
-## 4. 学生如何跟做
+## 5. 学生如何跟做
 
 ### 方式 A：对照已完成的仓库（最快）
 
 ```bash
-git clone <repo>
-cd vibecoding-mcp-server
-git checkout scm
+# 0. 先下载 OpenAPI 规范（见 §2 前置条件）
+#    确保 pan.dev/ 和 vibecoding-mcp-server/ 在同一父目录下
 
-# 配置凭据
+# 1. 克隆项目
+git clone https://github.com/zm1990s/vibecoding-mcp-server.git
+cd vibecoding-mcp-server
+git checkout scm-from-zero
+
+# 2. 验证软链接
+ls openapi-specs/scm/   # 能列出子目录说明 pan.dev 位置正确
+
+# 3. 配置凭据
 cp .env.example .env
 # 编辑 .env 填入 SCM_CLIENT_ID / SCM_CLIENT_SECRET / SCM_TSG_ID
 
-# 安装并自检
+# 4. 安装并自检
 pip install -e .
 export $(cat .env | grep -v '^#' | xargs)
-python -m scm_mcp.check
+python -m scm_mcp_server.check
 
-# 冒烟测试
+# 5. 冒烟测试
 python scripts/smoke_stdio.py
 ```
 
 ### 方式 B：用上面的提示词从零复现
+
+> 先完成 §2 前置条件（下载 OpenAPI 规范），再按步骤执行。
 
 按 Step 0 → Step 6 顺序，把每节"真实提示词"原样发给 Claude Code（或 Cursor），对照教学点和验收标准确认每步结果。
 
@@ -443,7 +526,7 @@ python scripts/smoke_stdio.py
 
 ---
 
-## 5. 常见问题
+## 6. 常见问题
 
 | 问题 | 原因 | 解决 |
 | --- | --- | --- |
@@ -453,3 +536,5 @@ python scripts/smoke_stdio.py
 | `HTTP 400` on list | folder/snippet/device 参数缺失 | SCM 列表 API 要求至少提供一个容器参数 |
 | tool 在 MCP 客户端不出现 | 会话未重启 | 关闭重开会话；确认 `scm-mcp` 已在 MCP 配置中注册 |
 | `push_candidate_config` 返回 409 | 有其他 job 正在运行 | 先用 `list_jobs` 确认无 pending/running job 再推送 |
+| `ls openapi-specs/scm/` 报错或为空 | pan.dev 目录位置不对，软链接失效 | 确认 `pan.dev/` 与 `vibecoding-mcp-server/` 在同一父目录；或按 §2「不想用软链接」方案把 openapi-specs 复制到项目内 |
+| sparse checkout 后 YAML 文件不存在 | sparse-checkout 路径未设置正确 | 在 pan.dev 目录执行 `git sparse-checkout set openapi-specs` 再 `git checkout` |
