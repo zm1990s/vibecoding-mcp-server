@@ -45,9 +45,41 @@
 
 ## 2. 逐步轨迹
 
-> 每节：**真实提示词（逐字，可直接复制）** → 关键决策/教学点 → 验收。
+> 每节：**真实提示词（逐字，可直接复制）** → 关键决策/教学点 → 验收 → **commit / tag / push**。
 > ⚠️ 下面的提示词是构建时**原样使用**的——红线约束、⚠️ 副作用提醒、"先给计划我确认"的 gating 一字未删。
 > 照抄即可复现同样的轨迹；删掉这些约束，复现质量会下降。
+
+### Git 提交规范（每步必做）
+
+> **每完成一个 Step，必须执行以下三步后再继续下一步。轨迹不落盘，复现就会断。**
+
+```bash
+# 1. 提交（message 格式：step-N: 一句话描述）
+git add -A
+git commit -m "step-N: <本步描述>"
+
+# 2. 打 tag（轻量 tag，名称与 step 号对应）
+git tag step-N
+
+# 3. 推送 commit 和 tag
+git push origin scm
+git push origin step-N
+```
+
+Tag 命名约定：
+
+| Step | Tag | 描述 |
+|---|---|---|
+| Step 0 | `step-0` | Context Stack 契约 |
+| Step 1 | `step-1` | PRD |
+| Step 2 | `step-2` | 项目骨架 |
+| Step 3 | `step-3` | DESIGN 映射表填充 |
+| Step 4a | `step-4a` | Objects 只读 tools |
+| Step 4b | `step-4b` | Objects 写操作 tools |
+| Step 5 | `step-5` | Security / Operations / IAM tools |
+| Step 6 | `step-6` | 阶段 3 收口 + 冒烟 |
+
+检出任意历史节点：`git checkout step-N`
 
 ---
 
@@ -81,6 +113,12 @@ OpenAPI 规范位于本仓库同级目录 ../pan.dev/openapi-specs/scm/，子目
 
 **验收**：4 文件齐、红线可读、OAuth2 凭据读取方式明确。
 
+**提交**：
+```bash
+git add -A && git commit -m "step-0: 建立 Context Stack 契约（CLAUDE/DESIGN/WORKFLOW/README）"
+git tag step-0 && git push origin scm && git push origin step-0
+```
+
 ---
 
 ### Step 1 — PRD
@@ -103,6 +141,12 @@ OpenAPI 规范位于本仓库同级目录 ../pan.dev/openapi-specs/scm/，子目
 **教学点**：PRD 写**能力**不写端点——端点是 L2 的事，避免跨层重复与臆造。验收标准必须二元可判定。SCM 是生产系统，PRD 里要显式标注写操作风险（误触配置推送等）。
 
 **验收**：验收标准 A1–A7 每条可执行；PRD 不含端点清单；风险表含凭据和写操作条目。
+
+**提交**：
+```bash
+git add -A && git commit -m "step-1: 新增 docs/PRD.md，更新 CLAUDE.md 目录约定"
+git tag step-1 && git push origin scm && git push origin step-1
+```
 
 ---
 
@@ -130,6 +174,12 @@ OpenAPI 规范位于本仓库同级目录 ../pan.dev/openapi-specs/scm/，子目
 **教学点**：骨架先于 tool。`auth.py` 独立成模块是 SCM 与日志分析版的最大区别——OAuth2 刷新逻辑有状态（缓存 + 锁），不应混进 rest_client。`check.py` 的自检分两步：先拿 token（验证凭据），再调 API（验证权限），两步分开报错让故障更易定位。
 
 **验收**：`pip install -e .` 通过；`python -m scm_mcp.check` 在凭据正确时输出 `OK`；`tools/list` 返回 `[]`。
+
+**提交**：
+```bash
+git add -A && git commit -m "step-2: 搭项目骨架（config/auth/rest_client/server/check，tools 空列表占位）"
+git tag step-2 && git push origin scm && git push origin step-2
+```
 
 ---
 
@@ -162,6 +212,12 @@ OpenAPI 规范位于本仓库同级目录 ../pan.dev/openapi-specs/scm/，子目
 
 **验收**：DESIGN.md §3 无 `_TBD_`，每行可在对应 YAML 中定位；tool 命名符合 `{动作}_{资源}` 规范。
 
+**提交**：
+```bash
+git add -A && git commit -m "step-3: 填充 DESIGN.md 映射表（37 个 tool，4 个 API 域）"
+git tag step-3 && git push origin scm && git push origin step-3
+```
+
 ---
 
 ### Step 4a — 实现 Objects API tools（只读批）
@@ -185,6 +241,12 @@ OpenAPI 规范位于本仓库同级目录 ../pan.dev/openapi-specs/scm/，子目
 
 **验收**：`pytest -q` 通过（mock 层）；`tools/list` 能列出实现的只读 tool；调 `list_addresses`（传 folder 参数）返回 SCM 真实响应。
 
+**提交**：
+```bash
+git add -A && git commit -m "step-4a: 实现 Objects API 只读 tool（list/get 类，路由表驱动）"
+git tag step-4a && git push origin scm && git push origin step-4a
+```
+
 ---
 
 ### Step 4b — 实现 Objects API tools（写操作批）
@@ -206,6 +268,12 @@ OpenAPI 规范位于本仓库同级目录 ../pan.dev/openapi-specs/scm/，子目
 **教学点**：SCM 写 API 的 container 参数（folder 等）走 query params 而不是 body——这是从 openapi YAML 现查得到的，不能臆造。`_pick()` 工具函数只取非 None 字段组装 body，让调用方可以只传要改的字段（PATCH 语义），而不强制要求传全量。
 
 **验收**：写操作 tool 单测（mock）全部通过；`create_address` + `delete_address` 集成测试（`@integration`，默认跳过）可手动运行。
+
+**提交**：
+```bash
+git add -A && git commit -m "step-4b: 实现 Objects API 写操作 tool（create/update/delete，_pick 函数）"
+git tag step-4b && git push origin scm && git push origin step-4b
+```
 
 ---
 
@@ -237,6 +305,12 @@ IAM（ServiceAccounts/Roles/AccessPolicies YAML）：
 
 **验收**：37 个 tool 全部注册；路由完整性验证通过（`set(TOOLS) == routed`）；`push_candidate_config` 单测验证 method=POST 且 body 字段正确。
 
+**提交**：
+```bash
+git add -A && git commit -m "step-5: 实现 Security / Operations / IAM tools（37 个 tool 全部注册）"
+git tag step-5 && git push origin scm && git push origin step-5
+```
+
 ---
 
 ### Step 6 — 阶段 3 收口 + stdio 冒烟
@@ -259,6 +333,12 @@ IAM（ServiceAccounts/Roles/AccessPolicies YAML）：
 **教学点**：冒烟用真实 MCP **client** 驱动 server，证明**传输层**可用（而非只直调 `tools.call()`）。路由完整性验证是"不漏 tool"的机械保证。37 个 tool 如果靠人工数容易出错，程序断言不会。
 
 **验收**：`python -c "import ast, ..."` → 7 文件全部 OK；路由完整性 → 37 tools, All routing entries present；`python scripts/smoke_stdio.py` → SMOKE OK；WORKFLOW 验收记录 A1–A7 全部填写。
+
+**提交**：
+```bash
+git add -A && git commit -m "step-6: 阶段 3 收口（语法检查 + 路由完整性 + 冒烟 + README + WORKFLOW 验收记录）"
+git tag step-6 && git push origin scm && git push origin step-6
+```
 
 ---
 
