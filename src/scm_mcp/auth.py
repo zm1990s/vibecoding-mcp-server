@@ -1,7 +1,7 @@
 """SCM OAuth2 client_credentials 令牌管理。
 
-SCM access token 有效期 15 分钟；本模块在过期前自动刷新。
-线程安全：token 缓存受 threading.Lock 保护，适配 server.py 中的 to_thread 调用模式。
+token 有效期 15 分钟；提前 60 秒刷新，避免边界竞争。
+threading.Lock 保证并发调用安全。
 """
 
 import threading
@@ -11,8 +11,7 @@ import httpx
 
 from . import config
 
-# token 过期前提前 60 秒刷新，避免边界竞争。
-_REFRESH_BUFFER = 60
+_REFRESH_BUFFER = 60  # 提前 60 秒刷新
 
 _lock = threading.Lock()
 _token: str | None = None
@@ -22,10 +21,9 @@ _expires_at: float = 0.0
 def _fetch_token() -> tuple[str, float]:
     """向 SCM Auth Service 请求新 access token，返回 (token, expires_at)。"""
     url = f"{config.get_auth_url()}/auth/v1/oauth2/access_token"
-    tsg_id = config.get_tsg_id()
     data = {
         "grant_type": "client_credentials",
-        "scope": f"tsg_id:{tsg_id}",
+        "scope": f"tsg_id:{config.get_tsg_id()}",
     }
     with httpx.Client(timeout=30.0) as client:
         resp = client.post(

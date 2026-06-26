@@ -19,7 +19,7 @@ dev = [
 ]
 
 [project.scripts]
-scm-mcp = "scm_mcp.server:main"
+scm-mcp       = "scm_mcp.server:main"
 scm-mcp-check = "scm_mcp.check:main"
 
 [tool.setuptools.packages.find]
