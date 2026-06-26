@@ -1,169 +1,143 @@
-# ai-log-mcp-server
+# scm-mcp-server
 
-把「AI 日志分析平台」的 REST 能力封装成 MCP tools，供 Claude Desktop / Cursor 等 MCP 客户端调用。
+把 **Palo Alto Networks Strata Cloud Manager（SCM）** 的 REST API 封装成 MCP tools，供 Claude Desktop / Cursor / Claude Code 等 MCP 客户端调用。
 
 - 语言：Python 3.10+ · MCP：官方 `mcp` SDK · 传输：stdio · HTTP：`httpx`
-- 设计原则：所有 tool 只转调平台 REST，不重写平台逻辑；schema 以平台 `/openapi.json` 为唯一来源。
-- 详见 `CLAUDE.md`（工程契约）、`DESIGN.md`（工具设计）、`WORKFLOW.md`（阶段协议）。
+- 鉴权：OAuth2 client_credentials，自动刷新 15 分钟令牌
+- 设计原则：所有 tool 只转调 SCM REST，不重写业务逻辑；schema 以 openapi-specs/scm 为唯一权威来源
+- 详见 `CLAUDE.md`（工程契约）、`DESIGN.md`（工具设计）
 
-## ⚠️ 前置依赖：业务平台必须在运行
+## 前置条件
 
-本 MCP server 是**薄壳**——它只把请求转发给「AI 日志分析平台」的 REST API。**平台不跑，14 个 tool 全部失败**。所以使用前先把平台起起来。
+- **Python 3.10+**
+- **SCM 服务账号**：在 SCM 控制台 → IAM → Service Accounts 创建，获取 Client ID 和 Client Secret
+- **TSG ID**：在 SCM 控制台 → Tenant Service Groups 中查看
+- **一个 MCP 客户端**：Claude Desktop / Cursor / Claude Code
 
-### 前置条件
-- **Docker Desktop**（含 compose v2）—— 跑平台
-- **Python 3.10+** —— 跑本 MCP server
-- **Git**
-- **一个 MCP 客户端**：Claude Code / Claude Desktop / Cursor
-- **DeepSeek API key**（无则平台用 `--profile mock` 起一个 mock LLM）
-
-### 起一份自己的平台
+## 安装
 
 ```bash
-git clone https://github.com/jeff-dev-1/vibecoding2026.git
-cd vibecoding2026
-cp .env.example .env          # 填 DEEPSEEK_API_KEY（没有就跳过，改用下方 mock）
-docker compose up -d          # 平台 → http://localhost:8000
-```
-
-> **想更快？** 若该仓含 `docker-compose.dist.yml`（直接拉预构建镜像，不本地编译），优先用它：
-> `docker compose -f docker-compose.dist.yml up -d`
-> 没有 DeepSeek key 时：`docker compose --profile mock up -d`（平台用内置 mock LLM）。
-
-### 连上 MCP
-
-```bash
-export APP_BASE_URL=http://localhost:8000
-python -m ai_log_mcp.check     # 确认 /openapi.json 可达
-# 再按下文「在 Claude Desktop / Cursor 注册」接入
-```
-
-平台跑起来、`check` 通过后，再回到本文档其余部分。
-
-## 环境变量
-
-| 变量 | 说明 | 默认值 |
-| --- | --- | --- |
-| `APP_BASE_URL` | 平台 REST 基址 | `http://localhost:8000` |
-
-> backend REST 是开放的（登录门只在前端），无需鉴权 token。
-
-## 本地运行
-
-```bash
-# 1. 安装（含测试依赖用 .[dev]）
+git clone <this-repo>
+cd vibecoding-mcp-server
 pip install -e .
-
-# 2. 指定平台地址（不指定则用默认 demo 地址）
-export APP_BASE_URL="http://localhost:8000"
-
-# 3. 以 stdio 方式启动 MCP server
-python -m ai_log_mcp.server
 ```
 
-> 调试推荐用 MCP Inspector：`npx @modelcontextprotocol/inspector python -m ai_log_mcp.server`
-> 连通自检：`python -m ai_log_mcp.check`（拉到 `${APP_BASE_URL}/openapi.json` 即通）
+## 配置
 
-## 可用工具（本轮 MVP）
-
-所有 tool 的入参/出参 schema 以 `${APP_BASE_URL}/openapi.json` 为唯一来源（见 `DESIGN.md` §3.1），只转调 REST、原样透传响应；非 2xx 返回 `{error, status, body}`。
-
-| tool | 端点 | 入参 | 说明 |
-| --- | --- | --- | --- |
-| `list_logs` | `GET /logs` | `limit`（可选, int） | 列最近日志/任务 |
-| `get_job` | `GET /logs/jobs/{job_id}` | `job_id`（必填, str） | 取某任务明细/结果 |
-| `chat_query` | `POST /chat/query` | `question`（必填）；`log_id`/`top_k`/`backend`/`scenario`（可选） | 对日志做 AI 问答/分析 |
-| `health` | `GET /health` | 无 | 平台健康/连通 |
-
-### 网关安全（只读，面向安全工程师）
-
-均为无入参 GET；openapi 无输出 schema，下表「返回内容」即选 tool 依据（见 `DESIGN.md` §3.2）。
-
-| tool | 端点 | 返回内容 |
-| --- | --- | --- |
-| `gateway_observability` | `GET /gateway/observability` | 网关指标：调用/失败/拦截数、错误率、token 用量与成本、p50/p95 延迟、分布 |
-| `gateway_info` | `GET /gateway/info` | 网关配置：网关名、provider、默认后端、后端列表与路由、guardrails |
-| `gateway_prompts` | `GET /gateway/prompts` | 网关提示词：system_prompts 与 scenario_prompts |
-| `gateway_redteam_report` | `GET /gateway/redteam-report` | 红队报告：通过率、各类别（注入/越狱/PII…）通过情况与失败用例 |
-| `gateway_supply_chain_report` | `GET /gateway/supply-chain-report` | 供应链报告：放行/拦截/待审批计数与各依赖判定 |
-| `gateway_pentest_report` | `GET /gateway/pentest-report` | 渗透报告：目标、gate 结论、高/中危数量与 findings |
-| `gateway_supply_chain_samples` | `GET /gateway/supply-chain/samples` | 供应链可选样本：启用状态、支持市场、示例样本 |
-
-### 上传（写操作）
-
-| tool | 端点 | 入参 | 说明 |
-| --- | --- | --- | --- |
-| `upload_logs` | `POST /logs/upload`（multipart） | `file_path?` / `content?`（互斥，二选一）；`filename?`；`source?`（`nginx`/`app`/`custom`） | 上传日志文件做分析，返回 `UploadResponse` |
-
-> `file_path` 首选（本地路径，server 读盘上传）；`content` 兜底（内联文本，不依赖文件系统）。大小上限默认 5 MB，可经 `UPLOAD_MAX_BYTES` 调整。详见 `DESIGN.md` §6。
-
-### 网关动作（写/查询）
-
-| tool | 端点 | 入参 | 说明 |
-| --- | --- | --- | --- |
-| `gateway_guardrail_test` | `POST /gateway/guardrail-test` | `text` | 送文本，得护栏裁定（verdict/matched_rules） |
-| `gateway_supply_chain_check` | `POST /gateway/supply-chain-check` | `marketplace`, `item_id`, `version?` | 送依赖标识，得供应链判定（state/risk/findings） |
-
-> 语义为裁定/查询，不写业务数据（仅令 gateway observability 计数+1）。
-> 3 个 `*-report` 的 **POST**（写回扫描报告）为 **CI-only，不暴露为 tool**——读取用对应 GET（见 `DESIGN.md` §5）。
-
-## 在 Claude Desktop 注册
-
-编辑 `claude_desktop_config.json`（macOS：`~/Library/Application Support/Claude/claude_desktop_config.json`）：
-
-```json
-{
-  "mcpServers": {
-    "ai-log": {
-      "command": "python",
-      "args": ["-m", "ai_log_mcp.server"],
-      "env": {
-        "APP_BASE_URL": "http://localhost:8000"
-      }
-    }
-  }
-}
-```
-
-重启 Claude Desktop 后，工具会出现在工具列表中。
-
-## 在 Cursor 注册
-
-编辑 `~/.cursor/mcp.json`（或项目级 `.cursor/mcp.json`）：
-
-```json
-{
-  "mcpServers": {
-    "ai-log": {
-      "command": "python",
-      "args": ["-m", "ai_log_mcp.server"],
-      "env": {
-        "APP_BASE_URL": "http://localhost:8000"
-      }
-    }
-  }
-}
-```
-
-## 如何验收
+复制 `.env.example` 为 `.env`，填入真实凭据：
 
 ```bash
-# 1. 单元测试（mock REST，不依赖平台在线）
-pip install -e '.[dev]'
-python -m pytest -q                       # 期望: 41 passed, 2 deselected
-
-# 2. 集成测试（需可达 ${APP_BASE_URL}）。⚠️ 含真上传，有副作用：会在平台创建真任务、污染数据
-python -m pytest -m integration -q        # 期望: 2 passed（连通性 + 真上传）
-#   只跑连通性、不触发上传：pytest -m integration -k "not upload"
-
-# 3. stdio 协议级冒烟（真实 MCP client over stdio 驱动本 server）
-python scripts/smoke_stdio.py             # 期望: 列出 14 个 tool + health 返回, SMOKE OK
+cp .env.example .env
+# 编辑 .env，填入 SCM_CLIENT_ID / SCM_CLIENT_SECRET / SCM_TSG_ID
 ```
 
-完整逐条验收（PRD §4 A1–A7）记录见 `WORKFLOW.md` 阶段 3。
+环境变量说明：
 
-## 参考链接
+| 变量 | 必填 | 说明 |
+| --- | --- | --- |
+| `SCM_CLIENT_ID` | ✅ | SCM 服务账号 Client ID |
+| `SCM_CLIENT_SECRET` | ✅ | SCM 服务账号 Client Secret |
+| `SCM_TSG_ID` | ✅ | Tenant Service Group ID |
+| `SCM_BASE_URL` | 可选 | 默认 `https://api.strata.paloaltonetworks.com` |
+| `SCM_AUTH_URL` | 可选 | 默认 `https://auth.apps.paloaltonetworks.com` |
 
-- demo UI：http://localhost:3000/ （登录 `admin` / `<由讲师提供>`，仅前端）
-- REST 文档（人读）：http://localhost:8000/docs
-- 机读契约（唯一权威）：http://localhost:8000/openapi.json
+## 连通性自检
+
+```bash
+export SCM_CLIENT_ID=xxx SCM_CLIENT_SECRET=yyy SCM_TSG_ID=zzz
+python -m scm_mcp.check
+# OK: SCM API 连通（base=https://api.strata.paloaltonetworks.com, tsg_id=zzz）
+```
+
+## 注册到 Claude Desktop
+
+在 `~/Library/Application Support/Claude/claude_desktop_config.json` 中添加：
+
+```json
+{
+  "mcpServers": {
+    "scm": {
+      "command": "python",
+      "args": ["-m", "scm_mcp.server"],
+      "env": {
+        "SCM_CLIENT_ID": "your-client-id",
+        "SCM_CLIENT_SECRET": "your-client-secret",
+        "SCM_TSG_ID": "your-tsg-id"
+      }
+    }
+  }
+}
+```
+
+## 注册到 Claude Code
+
+```bash
+claude mcp add scm python -- -m scm_mcp.server
+# 或通过 /mcp 命令在对话中添加
+```
+
+设置环境变量后重启客户端即可使用。
+
+## 可用 Tools（37 个）
+
+### Objects（地址/服务/标签等对象）
+| Tool | 说明 |
+| --- | --- |
+| `list_addresses` | 列出地址对象，支持 folder/name 过滤 |
+| `create_address` | 创建地址对象（ip-netmask/fqdn 等） |
+| `get_address` | 按 UUID 获取地址对象 |
+| `update_address` | 更新地址对象 |
+| `delete_address` | 删除地址对象 |
+| `list_address_groups` | 列出地址组 |
+| `create_address_group` | 创建地址组（静态/动态） |
+| `get_address_group` | 按 UUID 获取地址组 |
+| `update_address_group` | 更新地址组 |
+| `delete_address_group` | 删除地址组 |
+| `list_services` | 列出服务对象 |
+| `create_service` | 创建服务对象 |
+| `list_service_groups` | 列出服务组 |
+| `create_service_group` | 创建服务组 |
+| `list_tags` | 列出标签 |
+| `create_tag` | 创建标签 |
+| `list_application_groups` | 列出应用组 |
+| `list_external_dynamic_lists` | 列出外部动态列表（EDL） |
+
+### Security（安全策略与配置文件）
+| Tool | 说明 |
+| --- | --- |
+| `list_security_rules` | 列出安全策略规则 |
+| `create_security_rule` | 创建安全策略规则 |
+| `get_security_rule` | 按 UUID 获取安全规则 |
+| `update_security_rule` | 更新安全规则 |
+| `delete_security_rule` | 删除安全规则 |
+| `list_anti_spyware_profiles` | 列出反间谍软件配置文件 |
+| `list_vulnerability_profiles` | 列出漏洞防护配置文件 |
+| `list_wildfire_profiles` | 列出 WildFire 配置文件 |
+| `list_dns_security_profiles` | 列出 DNS 安全配置文件 |
+| `list_url_categories` | 列出自定义 URL 分类 |
+| `list_decryption_rules` | 列出解密规则 |
+| `list_decryption_profiles` | 列出解密配置文件 |
+
+### Operations（配置推送与版本）
+| Tool | 说明 |
+| --- | --- |
+| `list_jobs` | 列出配置任务（查看 push 进度） |
+| `get_job` | 按 ID 获取 Job 详情 |
+| `list_config_versions` | 列出配置版本历史 |
+| `push_candidate_config` | 将候选配置推送到指定 folder/设备 |
+
+### IAM（身份与权限）
+| Tool | 说明 |
+| --- | --- |
+| `list_service_accounts` | 列出服务账号 |
+| `list_roles` | 列出角色 |
+| `list_access_policies` | 列出访问策略 |
+
+## 开发
+
+```bash
+pip install -e ".[dev]"
+pytest                          # 单测（mock，不需要 SCM 在线）
+pytest -m integration           # 集成测试（需要真实 SCM 凭据）
+python scripts/smoke_stdio.py   # stdio 协议级冒烟
+```

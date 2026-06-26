@@ -3,9 +3,9 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "ai-log-mcp"
-version = "0.0.1"
-description = "MCP server wrapping the AI log analysis platform's REST API (stdio)."
+name = "scm-mcp"
+version = "0.1.0"
+description = "MCP server wrapping Palo Alto Networks Strata Cloud Manager (SCM) REST API (stdio)."
 requires-python = ">=3.10"
 dependencies = [
     "mcp>=1.0.0",
@@ -19,16 +19,15 @@ dev = [
 ]
 
 [project.scripts]
-ai-log-mcp = "ai_log_mcp.server:main"
-ai-log-mcp-check = "ai_log_mcp.check:main"
+scm-mcp = "scm_mcp.server:main"
+scm-mcp-check = "scm_mcp.check:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.pytest.ini_options]
-# 默认只跑单测（mock REST，不依赖 210 在线）；集成测试需显式 -m integration。
 addopts = "-m 'not integration'"
 asyncio_mode = "auto"
 markers = [
-    "integration: 需要可访问 ${APP_BASE_URL} 的连通性测试（默认跳过）",
+    "integration: 需要可访问 SCM API 的连通性测试（默认跳过）",
 ]
